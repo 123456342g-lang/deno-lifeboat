@@ -16,26 +16,66 @@ function freePort(): Promise<number> {
   });
 }
 
+const SUBPROCESS_TIMEOUT_MS = 60_000;
+
+/**
+ * Kills the app's whole process group and waits for it to exit. `bun`/`node` may be a wrapper
+ * script (asdf, mise, volta) whose real server is a grandchild holding our stdout/stderr pipes;
+ * killing only the direct child leaves that server running and the test process never exits.
+ */
+async function stopApp(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  const signal = (sig: NodeJS.Signals): void => {
+    try {
+      if (process.platform !== "win32" && child.pid !== undefined) process.kill(-child.pid, sig);
+      else child.kill(sig);
+    } catch {
+      // already gone
+    }
+  };
+  signal("SIGTERM");
+  const forced = setTimeout(() => signal("SIGKILL"), 3_000);
+  await exited;
+  clearTimeout(forced);
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+}
+
 /** Starts the app, waits for its "ready on <port>" log line, and returns the child process. */
 async function startApp(command: string, args: string[], cwd: string, port: number): Promise<ChildProcess> {
-  const child = spawn(command, args, { cwd, env: { ...process.env, PORT: String(port), GREETING: "ahoy" }, stdio: ["ignore", "pipe", "pipe"] });
-  let output = "";
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`app did not start in time:\n${output}`)), 15_000);
-    const onData = (chunk: Buffer): void => {
-      output += chunk.toString();
-      if (output.includes(`ready on ${port}`)) {
-        clearTimeout(timer);
-        resolve();
-      }
-    };
-    child.stdout?.on("data", onData);
-    child.stderr?.on("data", onData);
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`app exited with ${code}:\n${output}`));
-    });
+  const child = spawn(command, args, {
+    cwd,
+    env: { ...process.env, PORT: String(port), GREETING: "ahoy" },
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
   });
+  let output = "";
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`app did not start in time:\n${output}`)), 15_000);
+      const onData = (chunk: Buffer): void => {
+        output += chunk.toString();
+        if (output.includes(`ready on ${port}`)) {
+          clearTimeout(timer);
+          resolve();
+        }
+      };
+      child.stdout?.on("data", onData);
+      child.stderr?.on("data", onData);
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once("exit", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`app exited with ${code}:\n${output}`));
+      });
+    });
+  } catch (error) {
+    await stopApp(child);
+    throw error;
+  }
   return child;
 }
 
@@ -93,11 +133,11 @@ describe("end-to-end: migrate the serve-app fixture", () => {
     try {
       await assertServes(`http://127.0.0.1:${port}`);
     } finally {
-      app.kill();
+      await stopApp(app);
     }
 
     const { NODE_TEST_CONTEXT: _ignored, ...env } = process.env;
-    const tests = spawnSync(process.execPath, [...(nodeFlags ?? []), "--test", "main_test.ts"], { cwd: dir, encoding: "utf8", env });
+    const tests = spawnSync(process.execPath, [...(nodeFlags ?? []), "--test", "main_test.ts"], { cwd: dir, encoding: "utf8", env, timeout: SUBPROCESS_TIMEOUT_MS });
     assert.equal(tests.status, 0, tests.stdout + tests.stderr);
     assert.match(tests.stdout, /pass 4/);
     assert.match(tests.stdout, /fail 0/);
@@ -111,9 +151,9 @@ describe("end-to-end: migrate the serve-app fixture", () => {
     try {
       await assertServes(`http://127.0.0.1:${port}`);
     } finally {
-      app.kill();
+      await stopApp(app);
     }
-    const tests = spawnSync(bun!, ["test"], { cwd: dir, encoding: "utf8" });
+    const tests = spawnSync(bun!, ["test"], { cwd: dir, encoding: "utf8", timeout: SUBPROCESS_TIMEOUT_MS });
     assert.equal(tests.status, 0, tests.stdout + tests.stderr);
     assert.match(tests.stderr, /2 pass/);
   });

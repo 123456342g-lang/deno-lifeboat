@@ -76,3 +76,12 @@ jobs:
       - run: node --test --test-name-pattern "Bun" dist/test/e2e.test.js
         env:
           LIFEBOAT_REQUIRE_BUN: "1"
+      # A version-manager style wrapper (no exec) around bun: the suite must still exit.
+      - name: e2e exits when bun is a wrapper script
+        run: |
+          mkdir -p "$RUNNER_TEMP/shim"
+          printf '#!/bin/sh\n"%s" "$@"\n' "$(command -v bun)" > "$RUNNER_TEMP/shim/bun"
+          chmod +x "$RUNNER_TEMP/shim/bun"
+          PATH="$RUNNER_TEMP/shim:$PATH" timeout 120 node --test dist/test/e2e.test.js
+        env:
+          LIFEBOAT_REQUIRE_BUN: "1"
