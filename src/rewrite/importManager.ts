@@ -43,6 +43,17 @@ export class ImportManager {
     return local;
   }
 
+  /** Returns a function that undoes every `named()` call made after this point. */
+  checkpoint(): () => void {
+    const pendingLength = this.pending.length;
+    return () => {
+      for (const imp of this.pending.splice(pendingLength)) {
+        this.taken.delete(imp.local);
+        this.existing.delete(key(imp.module, imp.name));
+      }
+    };
+  }
+
   get hasPending(): boolean {
     return this.pending.length > 0;
   }

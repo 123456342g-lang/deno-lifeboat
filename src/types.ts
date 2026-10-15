@@ -48,7 +48,7 @@ export interface Dependency {
   readonly registry?: "jsr";
 }
 
-export type ShimName = "serve" | "cron" | "fs" | "build";
+export type ShimName = "serve" | "cron" | "fs" | "build" | "test";
 
 export interface Edit {
   readonly start: number;

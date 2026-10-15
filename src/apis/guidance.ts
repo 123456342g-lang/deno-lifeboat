@@ -7,7 +7,6 @@ export const WORKERS = {
   env: "Deno.env on Workers: read bindings from the `env` argument of your fetch handler, or `process.env` with the `nodejs_compat` flag (populated from vars/secrets for compatibility dates ≥ 2025-04-01); set secrets with `wrangler secret put`",
   cron:
     "Deno.cron → Cron Triggers: the schedule was added to wrangler.jsonc `triggers.crons`; move the handler body into `scheduled(controller, env, ctx)` on your default export and switch on `controller.cron` if you have several",
-  test: "Deno.test with a test context: use vitest (optionally @cloudflare/vitest-pool-workers) and rewrite `t.step` as nested `test`/`describe`",
   serve:
     "Deno.serve on Workers: export `{ fetch(request, env, ctx) }` as the module default export; options (port, hostname, onListen) do not apply",
   net: "raw TCP/UDP: outbound TCP is available via `connect()` from `cloudflare:sockets`; listening sockets are not available on Workers",

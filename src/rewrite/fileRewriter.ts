@@ -129,11 +129,17 @@ class FileRewrite {
     }
     const args = Node.isCallExpression(ref.node) ? ref.node.getArguments() : [];
     let outcome = { manual: "" } as Outcome;
+    const rollbackImports = this.imports.checkpoint();
+    const shimsBefore = new Set(this.shims);
+    const depsBefore = this.dependencies.length;
     this.edits.transaction(() => {
       outcome = action(this.context(ref.node, args));
       return !isManual(outcome);
     });
     if (isManual(outcome)) {
+      rollbackImports();
+      for (const shim of [...this.shims]) if (!shimsBefore.has(shim)) this.shims.delete(shim);
+      this.dependencies.splice(depsBefore);
       this.finding(ref.node, ref.api, ref.rule.category, "manual", outcome.manual);
       return;
     }

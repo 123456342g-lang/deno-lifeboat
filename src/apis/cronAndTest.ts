@@ -88,25 +88,25 @@ function contextUsage(fn: Node): { param?: string; stepNames: Node[]; otherUses:
 function buildTest(ctx: RewriteContext, variant: "" | ".skip" | ".only"): Outcome {
   const parts = testParts(ctx);
   if (typeof parts === "string") return manual(parts);
-  const usage = contextUsage(parts.fn);
-  let stepEdits: Edit[] = [];
-  if (usage.stepNames.length > 0 || usage.otherUses > 0) {
-    if (ctx.target !== "node" || usage.otherUses > 0) {
-      return manual(ctx.target === "workers" ? WORKERS.test : "Deno.test context (`t`) is used: bun:test has no `t.step`; split steps into separate tests or a describe() block");
-    }
-    stepEdits = usage.stepNames.map((n) => ({ start: n.getStart(), end: n.getEnd(), text: "test" }));
-  }
-  const fnText = ctx.text(parts.fn, stepEdits);
-  const test = ctx.named(TEST_MODULES[ctx.target], "test");
   const options = [parts.skip && `skip: ${parts.skip}`, parts.only && `only: ${parts.only}`].filter(Boolean);
   if (options.length > 0 && ctx.target !== "node") {
     return manual("Deno.test ignore/only options: use test.skipIf(condition)(name, fn) / test.only(name, fn) by hand");
   }
+  const usage = contextUsage(parts.fn);
+  const usesContext = usage.stepNames.length > 0 || usage.otherUses > 0;
+  const nativeSubtests = usesContext && ctx.target === "node" && usage.otherUses === 0;
+  const stepEdits: Edit[] = nativeSubtests ? usage.stepNames.map((n) => ({ start: n.getStart(), end: n.getEnd(), text: "test" })) : [];
+  const rawFnText = ctx.text(parts.fn, stepEdits);
+  const fnText = usesContext && !nativeSubtests
+    ? `() => (${rawFnText})(${ctx.shim("test", "testContext")}(${parts.name}))`
+    : rawFnText;
+  const test = ctx.named(TEST_MODULES[ctx.target], "test");
   if (ctx.target === "workers") ctx.dependency({ name: "vitest", spec: VITEST_VERSION, dev: true });
   const optionsText = options.length > 0 ? `{ ${options.join(", ")} }, ` : "";
   const notes = [
     parts.dropped.length > 0 ? `dropped Deno-only options: ${parts.dropped.join(", ")}` : undefined,
-    stepEdits.length > 0 ? "t.step → t.test (node:test subtests)" : undefined,
+    nativeSubtests ? "t.step → t.test (node:test subtests)" : undefined,
+    usesContext && !nativeSubtests ? "test context provided by lifeboat-shim/test.ts (steps run inline)" : undefined,
     variant === ".only" && ctx.target === "node" ? "node:test needs `--test-only` for test.only" : undefined,
   ].filter((n): n is string => n !== undefined);
   return {

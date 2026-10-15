@@ -38,7 +38,8 @@ function exportedOnlyAsType(file: SourceFile | undefined, name: string): boolean
 
 function usedOnlyAsType(file: SourceFile, nameNode: Identifier, identifiers: readonly Identifier[]): boolean {
   const name = nameNode.getText();
-  return identifiers.every((id) => id === nameNode || id.getText() !== name || isTypePosition(id) || isPropertyName(id));
+  const references = identifiers.filter((id) => id !== nameNode && id.getText() === name && !isPropertyName(id));
+  return references.length > 0 && references.every(isTypePosition);
 }
 
 /** True for identifiers that name a property/member rather than reference a binding (`x.name`, `{ name: 1 }`). */
