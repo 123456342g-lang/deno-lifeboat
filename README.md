@@ -3,7 +3,7 @@
 **Move a Deno app to Node.js, Bun, or Cloudflare Workers: one scan to see what's involved, one AST-based codemod to do the mechanical part. No lock-in to any of the three.**
 
 ```text
-$ npx github:123456342g-lang/deno-lifeboat scan
+$ npx https://github.com/123456342g-lang/deno-lifeboat/archive/refs/heads/main.tar.gz scan
 
 deno-lifeboat scan . → Node.js
 
@@ -19,31 +19,34 @@ Needs a human (3):
   main.ts:7   Deno.openKv  Deno.openKv on Node: `import { openKv } from "@deno/kv"` (npm, Deno's official client) ...
   main.ts:16  kv.enqueue()  kv.enqueue()/listenQueue(): works with @deno/kv on a local SQLite store only ...
 
-Next: npx github:123456342g-lang/deno-lifeboat migrate --to node   (dry run: shows the diff, changes nothing)
+Next: npx https://github.com/123456342g-lang/deno-lifeboat/archive/refs/heads/main.tar.gz migrate --to node   (dry run: shows the diff, changes nothing)
 ```
 
 (That is the real output for [`test/fixtures/deploy-app`](test/fixtures/deploy-app), with the long lines shortened.)
 
 ## Install / run
 
-Requires Node.js ≥ 20. Not published to npm yet, so run it straight from GitHub:
+Requires Node.js ≥ 20. It isn't published to npm yet, so run it straight from GitHub. The compiled CLI is committed, so nothing is built at install time:
 
 ```bash
-npx github:123456342g-lang/deno-lifeboat scan                        # read-only report (target: node)
-npx github:123456342g-lang/deno-lifeboat scan --to workers           # what a move to Workers involves
-npx github:123456342g-lang/deno-lifeboat migrate --to node           # dry run: prints the diff
-npx github:123456342g-lang/deno-lifeboat migrate --to node --write   # apply (needs a clean git tree)
+LIFEBOAT=https://github.com/123456342g-lang/deno-lifeboat/archive/refs/heads/main.tar.gz
+npx $LIFEBOAT scan                        # read-only report (target: node)
+npx $LIFEBOAT scan --to workers           # what a move to Workers involves
+npx $LIFEBOAT migrate --to node           # dry run: prints the diff
+npx $LIFEBOAT migrate --to node --write   # apply (needs a clean git tree)
 ```
 
-Or clone it and use it locally:
+With npm ≥ 10 the shorter `npx github:123456342g-lang/deno-lifeboat scan` also works. On npm 9, `npx` exits 1 without printing anything for *every* `github:` package (an npm bug), so use the tarball URL above. CI runs the tarball URL on npm 9.2 and npm 10, and the `github:` form on npm 10.
+
+Or clone it:
 
 ```bash
 git clone https://github.com/123456342g-lang/deno-lifeboat && cd deno-lifeboat
-npm install            # also compiles to dist/
+npm install
 node dist/src/cli.js scan /path/to/your/deno/app
 ```
 
-Note that `npx deno-lifeboat` (without `github:`) will **not** run this tool, because nothing is published under that name.
+Note that `npx deno-lifeboat` will **not** run this tool, because nothing is published under that name.
 
 ---
 
@@ -145,6 +148,8 @@ npm install
 npm test          # build + 238 tests (unit tests per mapping, shim HTTP tests, end-to-end)
 npm run typecheck
 ```
+
+`dist/src` is committed so installing from GitHub needs no build. After changing `src/`, run `npm run build` and commit `dist/src`; CI fails if it's stale.
 
 The end-to-end tests migrate [`test/fixtures/serve-app`](test/fixtures/serve-app) in a temporary git repo, start the migrated server, make a real HTTP request to it, and run its migrated tests. This happens under Node (≥ 22.6) and, if `bun` is on `PATH`, under Bun. No network access or package install is needed. CI runs Node 20, 22 and 24 plus a Bun job.
 

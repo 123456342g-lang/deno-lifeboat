@@ -12,6 +12,7 @@ jobs:
   node:
     name: Node ${{ matrix.node }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -35,6 +36,7 @@ jobs:
     name: npx from GitHub (npm ${{ matrix.npm }})
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -44,16 +46,24 @@ jobs:
         with:
           node-version: "20.19"
       - run: npm install -g npm@${{ matrix.npm }} && npm -v
-      - name: scan a tiny Deno project
+      - name: scan a tiny Deno project via the tarball URL (the documented command)
         run: |
           mkdir app && cd app
           echo 'Deno.serve(() => new Response("hi"));' > main.ts
-          npx --yes github:${{ github.repository }}#${{ github.sha }} scan . | tee out.txt
+          npx --yes https://github.com/${{ github.repository }}/archive/${{ github.sha }}.tar.gz scan . | tee out.txt
+          grep -q "Auto-migratable" out.txt
+      # npm 9's npx fails on every github: spec (an npm bug), so this form is only promised for npm >= 10.
+      - name: scan via github:owner/repo
+        if: matrix.npm != '9.2.0'
+        run: |
+          cd app
+          npx --yes github:${{ github.repository }} scan . | tee out.txt
           grep -q "Auto-migratable" out.txt
 
   bun:
     name: Bun end-to-end
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

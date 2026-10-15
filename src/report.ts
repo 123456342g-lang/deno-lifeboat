@@ -8,8 +8,11 @@ import type { Finding, Target } from "./types.js";
 
 const TARGET_NAMES: Readonly<Record<Target, string>> = { node: "Node.js", bun: "Bun", workers: "Cloudflare Workers" };
 const MAX_MANUAL_LINES = 60;
-/** Not on npm yet: `npx deno-lifeboat` would resolve to whatever package claims that name. */
-const INVOKE = "npx github:123456342g-lang/deno-lifeboat";
+/**
+ * Not on npm yet, and `npx deno-lifeboat` would resolve to whatever package claims that name.
+ * A tarball URL instead of `github:` because npm 9 `npx` fails silently on git specs.
+ */
+const INVOKE = "npx https://github.com/123456342g-lang/deno-lifeboat/archive/refs/heads/main.tar.gz";
 
 export interface JsonEnvelope<T> {
   readonly ok: boolean;
