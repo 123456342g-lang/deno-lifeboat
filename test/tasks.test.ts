@@ -28,7 +28,15 @@ describe("deno.json tasks → package.json scripts", () => {
   });
   test("deno run of a remote module is manual", () => assert.equal(convert("deno run -A https://deno.land/x/tool/cli.ts").status, "manual"));
   test("deno test → node --test with discovered patterns", () => assert.equal(convert("deno test -A").script, `node --test "**/*_test.ts"`));
-  test("deno test with explicit files", () => assert.equal(convert("deno test -A tests/").script, "node --test tests/"));
+  test("deno test with a directory → node --test glob", () => {
+    assert.equal(convert("deno test -A tests/").script, `node --test "tests/**/*_test.ts"`);
+    assert.equal(convert("deno test ./src").script, `node --test "src/**/*_test.ts"`);
+    assert.equal(convert("deno test .").script, `node --test "**/*_test.ts"`);
+  });
+  test("deno test with explicit files keeps them", () => {
+    assert.equal(convert("deno test -A tests/a_test.ts").script, "node --test tests/a_test.ts");
+    assert.equal(convert("deno test 'src/**/*.test.ts'").script, "node --test 'src/**/*.test.ts'");
+  });
   test("deno test on Bun / Workers", () => {
     assert.equal(convert("deno test -A", "bun").script, "bun test");
     assert.equal(convert("deno test -A", "workers").script, "vitest run");

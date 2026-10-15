@@ -81,6 +81,17 @@ function parseRunFlags(args: readonly string[], target: Target): ParsedRun {
   return { kept, dropped, rest: args.slice(i) };
 }
 
+const DEFAULT_TEST_GLOBS = ["**/*_test.ts", "**/*.test.ts"] as const;
+
+/** `node --test` does not expand directories (Deno does), so `tests/` becomes `"tests/**\/*_test.ts"`. */
+function nodeTestArg(arg: string, testPatterns: readonly string[]): string[] {
+  const looksLikeDirectory = !arg.startsWith("-") && !/[*?{]/.test(arg) && (arg.endsWith("/") || !/\.[A-Za-z0-9]+$/.test(arg));
+  if (!looksLikeDirectory) return [arg];
+  const dir = arg.replace(/^\.\//, "").replace(/\/+$/, "");
+  const globs = testPatterns.length > 0 ? testPatterns : DEFAULT_TEST_GLOBS;
+  return globs.map((glob) => `"${dir === "." || dir === "" ? glob : `${dir}/${glob}`}"`);
+}
+
 function runtimeCommand(target: Target): string {
   return target === "bun" ? "bun" : "node";
 }
@@ -119,7 +130,7 @@ function convertDenoInvocation(subcommand: string, args: string[], ctx: TaskCont
       const notes = dropped.length > 0 ? [`dropped Deno-only flags: ${dropped.join(" ")}`] : [];
       if (target === "bun") return { text: ["bun test", ...rest].join(" "), converted: true, notes };
       if (target === "workers") return { text: ["vitest run", ...rest].join(" "), converted: true, notes };
-      const patterns = rest.length > 0 ? rest : ctx.testPatterns.map((p) => `"${p}"`);
+      const patterns = rest.length > 0 ? rest.flatMap((arg) => nodeTestArg(arg, ctx.testPatterns)) : ctx.testPatterns.map((p) => `"${p}"`);
       return { text: ["node --test", ...patterns].join(" "), converted: true, notes };
     }
     case "task": {
