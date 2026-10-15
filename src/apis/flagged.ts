@@ -1,5 +1,6 @@
 import { Node } from "ts-morph";
 import { KV, NODE, WORKERS } from "./guidance.js";
+import { own } from "../own.js";
 import { manual, parenthesize, type ApiRule, type Handler, type TargetAction } from "./types.js";
 
 const ERROR_CODES: Readonly<Record<string, string>> = {
@@ -19,7 +20,7 @@ const ERROR_CODES: Readonly<Record<string, string>> = {
 const errorsHandler: Handler = (ctx) => {
   const access = ctx.node.getParent();
   if (!Node.isPropertyAccessExpression(access) || access.getExpression() !== ctx.node) return manual(NODE.errors);
-  const code = ERROR_CODES[access.getName()];
+  const code = own(ERROR_CODES, access.getName());
   const binary = access.getParent();
   if (!code || !Node.isBinaryExpression(binary) || binary.getRight() !== access || binary.getOperatorToken().getText() !== "instanceof") {
     return manual(NODE.errors);

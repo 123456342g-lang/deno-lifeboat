@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { Dependency } from "./types.js";
+import { own } from "./own.js";
 
 export interface ImportMap {
   readonly imports: Readonly<Record<string, string>>;
@@ -95,9 +96,9 @@ function mapDenoStd(rest: string): SpecifierMapping {
   const match = /^std(?:@[^/]+)?\/(.+)$/.exec(rest);
   if (!match?.[1]) return { kind: "manual", reason: `cannot parse deno.land/std URL "${rest}"` };
   const filePath = match[1];
-  const manual = STD_MANUAL[filePath];
+  const manual = own(STD_MANUAL, filePath);
   if (manual) return { kind: "manual", reason: manual };
-  const renamed = STD_RENAMES[filePath];
+  const renamed = own(STD_RENAMES, filePath);
   const note = "approximate mapping from deno.land/std to JSR @std: verify the subpath and API, std 0.x APIs changed";
   if (renamed) return rewrite(renamed, [jsrDependency(renamed, undefined)], note);
   const [moduleName, ...fileParts] = filePath.split("/");
@@ -126,7 +127,7 @@ const DENO_LAND_X: Readonly<Record<string, ThirdPartyMapping>> = {
 
 function mapDenoLandX(rest: string): SpecifierMapping {
   const match = /^x\/([^/@]+)(?:@v?([^/]+))?\/(.+)$/.exec(rest);
-  const known = match?.[1] ? DENO_LAND_X[match[1]] : undefined;
+  const known = match?.[1] ? own(DENO_LAND_X, match[1]) : undefined;
   if (!match || !known || match[3] !== "mod.ts") {
     return {
       kind: "manual",
@@ -187,7 +188,7 @@ export function toRelativeImport(fromFile: string, targetPath: string): string {
 /** Resolves a specifier through the import map (exact keys first, then the longest matching `/` prefix key). */
 export function resolveImportMap(specifier: string, importMap: ImportMap | undefined): string | undefined {
   if (!importMap) return undefined;
-  const exact = importMap.imports[specifier];
+  const exact = own(importMap.imports, specifier);
   if (exact !== undefined) return exact;
   let best: string | undefined;
   for (const key of Object.keys(importMap.imports)) {

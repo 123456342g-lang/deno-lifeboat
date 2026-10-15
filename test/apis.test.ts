@@ -275,6 +275,16 @@ describe("rewriter behaviour", () => {
     assert.match(workers.find((f) => f.api === "kv.atomic()")?.message ?? "", /Durable Object/);
   });
 
+  test("inherited object keys in user code are not mistaken for mappings", () => {
+    for (const target of ["node", "workers"] as const) {
+      const { findings } = rewrite(`const kv = await Deno.openKv();\nconsole.log(kv.toString(), kv.constructor.name);`, { target });
+      assert.ok(findings.every((f) => typeof f.message === "string"), target);
+      assert.ok(!findings.some((f) => f.api === "kv.toString()"), target);
+    }
+    assert.equal(rewrite(`import x from "constructor";`, { importMap: { a: "./a.ts" } }).output, `import x from "constructor";`);
+    assert.equal(rewrite(`import { toString } from "https://deno.land/std@0.181.0/http/server.ts";`).findings[0]?.status, "manual");
+  });
+
   test("BroadcastChannel is flagged as Deploy-specific", () => {
     const { findings } = rewrite(`const ch = new BroadcastChannel("updates");`);
     assert.equal(findings[0]?.category, "deploy");

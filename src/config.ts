@@ -87,7 +87,8 @@ function convertTasks(input: ConfigInput, configText: string | undefined): { scr
     if (command === undefined) continue;
     const result = convertTask(command, { target: input.target, testPatterns: input.testPatterns });
     scripts[name] = result.script;
-    const message = `"${command}" → "${result.script}"${result.note ? ` (${result.note})` : ""}`;
+    const change = result.script === command ? `"${command}" kept as-is` : `"${command}" → "${result.script}"`;
+    const message = `${change}${result.note ? ` (${result.note})` : ""}`;
     findings.push({ file, line: lineOf(configText, `"${name}"`), column: 1, api: `task:${name}`, category: "config", status: result.status, message });
     if (typeof task === "object" && task.dependencies && task.dependencies.length > 0) {
       const runner = input.target === "bun" ? "bun run" : "npm run";

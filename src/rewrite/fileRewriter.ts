@@ -8,6 +8,7 @@ import type { Category, Dependency, Edit, Finding, ShimName, Status, Target } fr
 import { EditSet } from "./editSet.js";
 import { erasableSyntaxEdits } from "./erasable.js";
 import { findDenoRefs, shadowsDeno, type DenoRef } from "./denoRefs.js";
+import { own } from "../own.js";
 import { ImportManager } from "./importManager.js";
 import { isStdBdd, rewriteStdBddImport } from "./stdTesting.js";
 import { typeOnlyImportFixes } from "./typeImports.js";
@@ -212,9 +213,9 @@ const STD_SERVER_EXPORTS: Readonly<Record<string, { readonly name: string; reado
 function rewriteStdHttpServer(rw: FileRewrite, decl: ImportDeclaration): boolean {
   if (rw.options.target === "workers" || decl.getDefaultImport() || decl.getNamespaceImport()) return false;
   const named = decl.getNamedImports();
-  if (named.length === 0 || !named.every((spec) => STD_SERVER_EXPORTS[spec.getName()])) return false;
+  if (named.length === 0 || !named.every((spec) => own(STD_SERVER_EXPORTS, spec.getName()))) return false;
   const parts = named.map((spec) => {
-    const mapped = STD_SERVER_EXPORTS[spec.getName()]!;
+    const mapped = own(STD_SERVER_EXPORTS, spec.getName())!;
     const local = spec.getAliasNode()?.getText() ?? spec.getName();
     const typed = mapped.type || spec.isTypeOnly() || decl.isTypeOnly();
     return `${typed && !decl.isTypeOnly() ? "type " : ""}${mapped.name}${local === mapped.name ? "" : ` as ${local}`}`;
@@ -325,7 +326,7 @@ function flagKvCalls(rw: FileRewrite): void {
   for (const call of rw.file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const callee = call.getExpression();
     if (!Node.isPropertyAccessExpression(callee)) continue;
-    const method = KV_METHODS[callee.getName()];
+    const method = own(KV_METHODS, callee.getName());
     if (!method) continue;
     if (callee.getName() === "watch" && !/kv|db|store/i.test(callee.getExpression().getText())) continue;
     const status: Status = rw.options.target === "workers" ? "manual" : method.nodeStatus;
