@@ -19,7 +19,7 @@ export const KV = {
   openKvNode:
     "Deno.openKv on Node: `import { openKv } from \"@deno/kv\"` (npm, Deno's official client). `await openKv(\"kv.sqlite3\")` gives a local SQLite store with the same API (get/set/list/atomic/watch/enqueue); `await openKv(\"https://api.deno.com/databases/<id>/connect\")` (token in DENO_KV_ACCESS_TOKEN) reads your existing Deploy KV, but queues (enqueue/listenQueue) are not available over that remote protocol. Copy data out before Deno Deploy shuts down, e.g. with `exportEntries` from jsr:@deno/kv-utils",
   openKvBun:
-    "Deno.openKv on Bun: try `import { openKv } from \"@deno/kv\"` (Node-API SQLite build; verify on your Bun version), or move to `bun:sqlite`. Export existing Deploy data with `exportEntries` from jsr:@deno/kv-utils before Deno Deploy shuts down",
+    "Deno.openKv on Bun: `import { openKv } from \"@deno/kv\"`, but on Bun it throws unless you pass serializers: `import { serialize as encodeV8, deserialize as decodeV8 } from \"node:v8\"; await openKv(\"kv.sqlite3\", { encodeV8, decodeV8 })`. Bun's format is JavaScriptCore, not V8, so that store is unreadable from Deno/Node and must not point at your Deploy database; import data into it instead (or move to `bun:sqlite`). Copy data out of Deploy with `exportEntries` from jsr:@deno/kv-utils before Deno Deploy shuts down",
   openKvWorkers:
     "Deno.openKv on Workers: pick a store per access pattern — Workers KV (eventually consistent, no transactions), D1 (SQLite, transactions via batch), or a Durable Object (strongly consistent storage, the closest match to kv.atomic()). Export existing data with `exportEntries` from jsr:@deno/kv-utils and import it before Deno Deploy shuts down",
   atomic:
