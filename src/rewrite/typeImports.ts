@@ -68,7 +68,7 @@ function safeModuleFile(decl: { getModuleSpecifierSourceFile(): SourceFile | und
  * from another module fails at runtime ("does not provide an export named"). Deno/tsc elide them.
  * This marks imports (and re-exports) that are only used as types with `type`.
  */
-export function typeOnlyImportFixes(file: SourceFile): TypeImportFix {
+export function typeOnlyImportFixes(file: SourceFile, skip: (specifier: string) => boolean = () => false): TypeImportFix {
   const identifiers = file.getDescendantsOfKind(SyntaxKind.Identifier);
   const edits: Edit[] = [];
   const names: Array<{ name: string; line: number }> = [];
@@ -78,7 +78,7 @@ export function typeOnlyImportFixes(file: SourceFile): TypeImportFix {
   };
 
   for (const decl of file.getImportDeclarations()) {
-    if (decl.isTypeOnly() || !decl.getImportClause()) continue;
+    if (decl.isTypeOnly() || !decl.getImportClause() || skip(decl.getModuleSpecifierValue())) continue;
     const target = safeModuleFile(decl);
     const isType = (nameNode: Identifier, importedName: string): boolean =>
       exportedOnlyAsType(target, importedName) || usedOnlyAsType(file, nameNode, identifiers);

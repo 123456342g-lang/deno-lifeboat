@@ -1,10 +1,11 @@
 import path from "node:path";
-import { Node, SyntaxKind, type SourceFile, type StringLiteral } from "ts-morph";
+import { Node, SyntaxKind, type ImportDeclaration, type SourceFile, type StringLiteral } from "ts-morph";
 import { isManual, KV, type Outcome, type RewriteContext } from "../apis/index.js";
 import { parenthesize } from "../apis/types.js";
-import { mapSpecifier, toRelativeImport, type ImportMap } from "../imports.js";
+import { isStdHttpServer, mapSpecifier, toRelativeImport, type ImportMap } from "../imports.js";
 import type { Category, Dependency, Edit, Finding, ShimName, Status, Target } from "../types.js";
 import { EditSet } from "./editSet.js";
+import { erasableSyntaxEdits } from "./erasable.js";
 import { findDenoRefs, shadowsDeno, type DenoRef } from "./denoRefs.js";
 import { ImportManager } from "./importManager.js";
 import { typeOnlyImportFixes } from "./typeImports.js";
@@ -199,8 +200,38 @@ function moduleSpecifierLiterals(file: SourceFile): StringLiteral[] {
   return literals;
 }
 
+const STD_SERVER_EXPORTS: Readonly<Record<string, { readonly name: string; readonly type: boolean }>> = {
+  serve: { name: "serveStd", type: false },
+  Handler: { name: "ServeHandler", type: true },
+  ConnInfo: { name: "ServeHandlerInfo", type: true },
+};
+
+/** Rewrites `import { serve } from "https://deno.land/std@x/http/server.ts"` to the serve shim. Returns false if it can't. */
+function rewriteStdHttpServer(rw: FileRewrite, decl: ImportDeclaration): boolean {
+  if (rw.options.target === "workers" || decl.getDefaultImport() || decl.getNamespaceImport()) return false;
+  const named = decl.getNamedImports();
+  if (named.length === 0 || !named.every((spec) => STD_SERVER_EXPORTS[spec.getName()])) return false;
+  const parts = named.map((spec) => {
+    const mapped = STD_SERVER_EXPORTS[spec.getName()]!;
+    const local = spec.getAliasNode()?.getText() ?? spec.getName();
+    const typed = mapped.type || spec.isTypeOnly() || decl.isTypeOnly();
+    return `${typed && !decl.isTypeOnly() ? "type " : ""}${mapped.name}${local === mapped.name ? "" : ` as ${local}`}`;
+  });
+  if (named.some((spec) => spec.getName() === "serve")) rw.shims.add("serve");
+  const prefix = decl.isTypeOnly() ? "import type" : "import";
+  rw.edits.add({ start: decl.getStart(), end: decl.getEnd(), text: `${prefix} { ${parts.join(", ")} } from "${rw.shimSpecifier("serve")}";` });
+  rw.servesHttp ||= named.some((spec) => spec.getName() === "serve");
+  rw.finding(decl, decl.getModuleSpecifierValue(), "import", "auto", "→ lifeboat-shim/serve.ts (std serve(handler, options) compatible)");
+  return true;
+}
+
 function rewriteSpecifiers(rw: FileRewrite): void {
+  const handled = new Set<Node>();
+  for (const decl of rw.file.getImportDeclarations()) {
+    if (isStdHttpServer(decl.getModuleSpecifierValue()) && rewriteStdHttpServer(rw, decl)) handled.add(decl.getModuleSpecifier());
+  }
   for (const literal of moduleSpecifierLiterals(rw.file)) {
+    if (handled.has(literal)) continue;
     const value = literal.getLiteralValue();
     const mapping = mapSpecifier(value, { importMap: rw.options.importMap, fromFile: rw.file.getFilePath() });
     if (mapping.kind === "unchanged") continue;
@@ -304,23 +335,18 @@ function flagDeployFeatures(rw: FileRewrite): void {
 
 function flagNodeTypeScriptSyntax(rw: FileRewrite): void {
   if (rw.options.target !== "node" || !rw.isTs) return;
-  const transformHint = "Node's built-in type stripping cannot run this; rewrite it (e.g. a const object instead of an enum) or run with --experimental-transform-types / tsx";
+  const transformHint = "Node's built-in type stripping cannot run this; rewrite it as plain functions/objects or run with --experimental-transform-types / tsx";
   if (rw.file.getFilePath().endsWith(".tsx")) {
     rw.finding(rw.file, ".tsx", "syntax", "manual", "Node cannot run JSX/TSX directly: add a build step (esbuild, tsx, Vite) or use Bun");
   }
-  for (const node of rw.file.getDescendantsOfKind(SyntaxKind.EnumDeclaration)) {
-    if (!node.hasDeclareKeyword()) rw.finding(node, "enum", "syntax", "manual", `TypeScript enum: ${transformHint}`);
-  }
+  const erasable = erasableSyntaxEdits(rw.file);
+  for (const edit of erasable.edits) rw.edits.add(edit);
+  for (const report of erasable.reports) rw.finding(report.node, report.api, "syntax", report.status, report.message);
   for (const node of rw.file.getDescendantsOfKind(SyntaxKind.ModuleDeclaration)) {
     const ambient = node.hasDeclareKeyword() || node.getFirstAncestor((a) => Node.isModuleDeclaration(a) && a.hasDeclareKeyword()) !== undefined;
     const typesOnly = node.getStatements().every((s) => Node.isInterfaceDeclaration(s) || Node.isTypeAliasDeclaration(s));
     if (!ambient && !typesOnly && node.getDeclarationKind() !== "global") {
       rw.finding(node, "namespace", "syntax", "manual", `TypeScript namespace: ${transformHint}`);
-    }
-  }
-  for (const ctor of rw.file.getDescendantsOfKind(SyntaxKind.Constructor)) {
-    for (const param of ctor.getParameters()) {
-      if (param.isParameterProperty()) rw.finding(param, "parameter property", "syntax", "manual", `constructor parameter property: ${transformHint}`);
     }
   }
   for (const decorator of rw.file.getDescendantsOfKind(SyntaxKind.Decorator)) {
@@ -330,7 +356,7 @@ function flagNodeTypeScriptSyntax(rw: FileRewrite): void {
 
 function fixTypeOnlyImports(rw: FileRewrite): void {
   if (rw.options.target !== "node" || !rw.isTs) return;
-  const fix = typeOnlyImportFixes(rw.file);
+  const fix = typeOnlyImportFixes(rw.file, isStdHttpServer);
   for (const edit of fix.edits) rw.edits.add(edit);
   for (const { name, line } of fix.names) {
     rw.findings.push({ file: rw.relative, line, column: 1, api: name, category: "syntax", status: "info", message: "marked as a type-only import (Node keeps non-`type` imports at runtime)" });

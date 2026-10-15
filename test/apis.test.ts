@@ -281,9 +281,23 @@ describe("rewriter behaviour", () => {
     assert.equal(findings[0]?.status, "manual");
   });
 
-  test("Node-only: enums and parameter properties are flagged for type stripping", () => {
+  test("Node-only: enums and parameter properties are rewritten for type stripping", () => {
     const code = `enum Color { Red }\nclass A { constructor(private x: number) {} }`;
-    assert.deepEqual(rewrite(code).findings.map((f) => f.api), ["enum", "parameter property"]);
+    const node = rewrite(code).findings;
+    assert.deepEqual(node.map((f) => `${f.api}:${f.status}`), ["enum:auto", "parameter property:auto"]);
     assert.equal(rewrite(code, { target: "bun" }).findings.length, 0);
+  });
+
+  test("Node-only: namespaces with values and decorators are flagged", () => {
+    const code = `namespace NS { export const a = 1; }\nnamespace Types { export type T = string; }\n@sealed class B {}`;
+    assert.deepEqual(rewrite(code).findings.map((f) => `${f.api}:${f.status}`), ["namespace:manual", "decorator:manual"]);
+  });
+
+  test("std/http/server.ts serve → serve shim with the std signature", () => {
+    const code = `import { serve, type ConnInfo } from "https://deno.land/std@0.181.0/http/server.ts";\nserve((req: Request, info: ConnInfo) => new Response("x"), { port: 3000 });`;
+    const { output, findings, shims } = rewrite(code);
+    assert.ok(output.startsWith(`import { serveStd as serve, type ServeHandlerInfo as ConnInfo } from "./lifeboat-shim/serve.ts";`), output);
+    assert.equal(findings[0]?.status, "auto");
+    assert.ok(shims.has("serve"));
   });
 });
