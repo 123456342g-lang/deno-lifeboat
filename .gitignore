@@ -1,4 +1,6 @@
 node_modules/
-dist/
+# dist/src is committed so installing from GitHub needs no build step.
+/dist/*
+!/dist/src/
 *.log
 .lifeboat-tmp/

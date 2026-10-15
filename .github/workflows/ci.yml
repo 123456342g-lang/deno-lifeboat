@@ -26,6 +26,30 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Committed dist/src matches the sources
+        run: |
+          git status --porcelain -- dist/src
+          test -z "$(git status --porcelain -- dist/src)" || { echo "::error::dist/src is stale: run npm run build and commit it"; exit 1; }
+
+  install-from-github:
+    name: npx from GitHub (npm ${{ matrix.npm }})
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        npm: ["9.2.0", "10"]
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+      - run: npm install -g npm@${{ matrix.npm }} && npm -v
+      - name: scan a tiny Deno project
+        run: |
+          mkdir app && cd app
+          echo 'Deno.serve(() => new Response("hi"));' > main.ts
+          npx --yes github:${{ github.repository }}#${{ github.sha }} scan . | tee out.txt
+          grep -q "Auto-migratable" out.txt
 
   bun:
     name: Bun end-to-end
