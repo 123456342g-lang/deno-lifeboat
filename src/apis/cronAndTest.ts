@@ -4,7 +4,7 @@ import { NODE, WORKERS } from "./guidance.js";
 import { manual, type ApiRule, type Handler, type Outcome, type RewriteContext } from "./types.js";
 
 const CRONER_VERSION = "^10.0.1";
-const VITEST_VERSION = "^3.2.0";
+export const VITEST_VERSION = "^3.2.0";
 
 const nodeCron: Handler = (ctx) => {
   if (ctx.args.length < 3 || ctx.args.length > 4) return manual("Deno.cron called with an unexpected number of arguments");

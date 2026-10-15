@@ -1,13 +1,15 @@
 import path from "node:path";
 import { Node, SyntaxKind, type ImportDeclaration, type SourceFile, type StringLiteral } from "ts-morph";
 import { isManual, KV, type Outcome, type RewriteContext } from "../apis/index.js";
+import { VITEST_VERSION } from "../apis/cronAndTest.js";
 import { parenthesize } from "../apis/types.js";
-import { isStdHttpServer, mapSpecifier, toRelativeImport, type ImportMap } from "../imports.js";
+import { isStdHttpServer, mapSpecifier, resolveImportMap, toRelativeImport, type ImportMap } from "../imports.js";
 import type { Category, Dependency, Edit, Finding, ShimName, Status, Target } from "../types.js";
 import { EditSet } from "./editSet.js";
 import { erasableSyntaxEdits } from "./erasable.js";
 import { findDenoRefs, shadowsDeno, type DenoRef } from "./denoRefs.js";
 import { ImportManager } from "./importManager.js";
+import { isStdBdd, rewriteStdBddImport } from "./stdTesting.js";
 import { typeOnlyImportFixes } from "./typeImports.js";
 
 export const SHIM_DIR = "lifeboat-shim";
@@ -225,10 +227,24 @@ function rewriteStdHttpServer(rw: FileRewrite, decl: ImportDeclaration): boolean
   return true;
 }
 
+function rewriteStdBdd(rw: FileRewrite, decl: ImportDeclaration): boolean {
+  const result = rewriteStdBddImport(decl, rw.options.target);
+  if ("manual" in result) {
+    rw.finding(decl, "@std/testing/bdd", "test", "manual", `@std/testing/bdd runs on Deno.test; ${result.manual}`);
+    return false;
+  }
+  if (rw.options.target === "workers") rw.dependencies.push({ name: "vitest", spec: VITEST_VERSION, dev: true });
+  rw.edits.add({ start: decl.getStart(), end: decl.getEnd(), text: result.text });
+  rw.finding(decl, "@std/testing/bdd", "test", "auto", `→ "${result.module}" (@std/testing/bdd registers suites via Deno.test)`);
+  return true;
+}
+
 function rewriteSpecifiers(rw: FileRewrite): void {
   const handled = new Set<Node>();
   for (const decl of rw.file.getImportDeclarations()) {
-    if (isStdHttpServer(decl.getModuleSpecifierValue()) && rewriteStdHttpServer(rw, decl)) handled.add(decl.getModuleSpecifier());
+    const value = decl.getModuleSpecifierValue();
+    if (isStdHttpServer(value) && rewriteStdHttpServer(rw, decl)) handled.add(decl.getModuleSpecifier());
+    if (isStdBdd(resolveImportMap(value, rw.options.importMap) ?? value) && rewriteStdBdd(rw, decl)) handled.add(decl.getModuleSpecifier());
   }
   for (const literal of moduleSpecifierLiterals(rw.file)) {
     if (handled.has(literal)) continue;
@@ -356,7 +372,7 @@ function flagNodeTypeScriptSyntax(rw: FileRewrite): void {
 
 function fixTypeOnlyImports(rw: FileRewrite): void {
   if (rw.options.target !== "node" || !rw.isTs) return;
-  const fix = typeOnlyImportFixes(rw.file, isStdHttpServer);
+  const fix = typeOnlyImportFixes(rw.file, (specifier) => isStdHttpServer(specifier) || isStdBdd(specifier));
   for (const edit of fix.edits) rw.edits.add(edit);
   for (const { name, line } of fix.names) {
     rw.findings.push({ file: rw.relative, line, column: 1, api: name, category: "syntax", status: "info", message: "marked as a type-only import (Node keeps non-`type` imports at runtime)" });

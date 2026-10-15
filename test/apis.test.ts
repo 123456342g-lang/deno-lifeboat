@@ -300,4 +300,32 @@ describe("rewriter behaviour", () => {
     assert.equal(findings[0]?.status, "auto");
     assert.ok(shims.has("serve"));
   });
+
+  describe("@std/testing/bdd", () => {
+    const suite = `import { afterAll, beforeEach, describe, it } from "jsr:@std/testing/bdd";\ndescribe("s", () => { beforeEach(() => {}); afterAll(() => {}); it("x", () => {}); });`;
+    test("→ node:test with before/after names", () => {
+      const { output, findings } = rewrite(suite);
+      assert.ok(output.startsWith(`import { after as afterAll, beforeEach, describe, it } from "node:test";`), output);
+      assert.equal(findings.find((f) => f.api === "@std/testing/bdd")?.status, "auto");
+      assert.ok(!output.includes("@std/testing"));
+    });
+    test("→ bun:test / vitest", () => {
+      assert.ok(rewrite(suite, { target: "bun" }).output.startsWith(`import { afterAll, beforeEach, describe, it } from "bun:test";`));
+      const workers = rewrite(suite, { target: "workers" });
+      assert.ok(workers.output.startsWith(`import { afterAll, beforeEach, describe, it } from "vitest";`));
+      assert.ok(workers.dependencies.some((d) => d.name === "vitest" && d.dev));
+    });
+    test("resolves import-map aliases and deno.land/std URLs", () => {
+      const viaMap = rewrite(`import { it } from "bdd";\nit("x", () => {});`, { importMap: { bdd: "jsr:@std/testing@1/bdd" } });
+      assert.ok(viaMap.output.startsWith(`import { it } from "node:test";`), viaMap.output);
+      const viaUrl = rewrite(`import { it } from "https://deno.land/std@0.200.0/testing/bdd.ts";\nit("x", () => {});`);
+      assert.ok(viaUrl.output.startsWith(`import { it } from "node:test";`), viaUrl.output);
+    });
+    test(".ignore and the object form stay manual", () => {
+      const ignore = rewrite(`import { it } from "jsr:@std/testing/bdd";\nit.ignore("x", () => {});`);
+      assert.equal(ignore.findings.find((f) => f.api === "@std/testing/bdd")?.status, "manual");
+      const objectForm = rewrite(`import { it } from "jsr:@std/testing/bdd";\nit({ name: "x", fn() {} });`);
+      assert.match(objectForm.findings.find((f) => f.api === "@std/testing/bdd")?.message ?? "", /object form/);
+    });
+  });
 });
