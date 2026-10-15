@@ -8,6 +8,8 @@ import type { Finding, Target } from "./types.js";
 
 const TARGET_NAMES: Readonly<Record<Target, string>> = { node: "Node.js", bun: "Bun", workers: "Cloudflare Workers" };
 const MAX_MANUAL_LINES = 60;
+/** Not on npm yet: `npx deno-lifeboat` would resolve to whatever package claims that name. */
+const INVOKE = "npx github:123456342g-lang/deno-lifeboat";
 
 export interface JsonEnvelope<T> {
   readonly ok: boolean;
@@ -82,10 +84,10 @@ export function formatNextStep(analysis: Analysis, command: "scan" | "migrate", 
   const dir = path.relative(process.cwd(), analysis.root) || ".";
   const dirArg = dir === "." ? "" : ` ${dir}`;
   if (command === "scan") {
-    return `\n${pc.dim("Next:")} npx deno-lifeboat migrate${dirArg} --to ${analysis.target}   ${pc.dim("(dry run: shows the diff, changes nothing)")}\n`;
+    return `\n${pc.dim("Next:")} ${INVOKE} migrate${dirArg} --to ${analysis.target}   ${pc.dim("(dry run: shows the diff, changes nothing)")}\n`;
   }
   if (!wrote) {
-    return `\n${pc.dim("Dry run — nothing was written.")} Apply with: npx deno-lifeboat migrate${dirArg} --to ${analysis.target} --write\n`;
+    return `\n${pc.dim("Dry run — nothing was written.")} Apply with: ${INVOKE} migrate${dirArg} --to ${analysis.target} --write\n`;
   }
   return `\n${pc.green("Done.")} Review with ${pc.bold("git diff")}, then follow ${pc.bold("lifeboat-checklist.md")}. deno.json was left untouched.\n`;
 }
