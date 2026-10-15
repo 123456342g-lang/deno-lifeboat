@@ -1,0 +1,133 @@
+import path from "node:path";
+import { createTwoFilesPatch } from "diff";
+import pc from "picocolors";
+import type { PlannedFile } from "./config.js";
+import type { Analysis } from "./project.js";
+import type { Tally } from "./summary.js";
+import type { Finding, Target } from "./types.js";
+
+const TARGET_NAMES: Readonly<Record<Target, string>> = { node: "Node.js", bun: "Bun", workers: "Cloudflare Workers" };
+const MAX_MANUAL_LINES = 60;
+
+export interface JsonEnvelope<T> {
+  readonly ok: boolean;
+  readonly data: T | null;
+  readonly error: string | null;
+}
+
+export function envelope<T>(data: T): JsonEnvelope<T> {
+  return { ok: true, data, error: null };
+}
+
+export function errorEnvelope(error: string): JsonEnvelope<never> {
+  return { ok: false, data: null, error };
+}
+
+function bar(pct: number, width = 20): string {
+  const filled = Math.round((pct / 100) * width);
+  return pc.green("█".repeat(filled)) + pc.dim("░".repeat(width - filled));
+}
+
+function tallyLine(label: string, t: Tally): string | undefined {
+  if (t.total === 0) return undefined;
+  const auto = t.auto === t.total ? pc.green(`${t.auto} auto`) : `${pc.green(`${t.auto} auto`)}  ${pc.yellow(`${t.manual} manual`)}`;
+  return `  ${label.padEnd(14)}${String(t.total).padStart(4)}   ${auto}`;
+}
+
+function location(f: Finding): string {
+  return `${f.file}:${f.line}`;
+}
+
+function manualLines(findings: readonly Finding[]): string[] {
+  const manual = findings.filter((f) => f.status === "manual");
+  if (manual.length === 0) return [];
+  const width = Math.min(40, Math.max(...manual.map((f) => location(f).length)));
+  const shown = manual.slice(0, MAX_MANUAL_LINES).map((f) => {
+    const msg = f.message.length > 140 ? `${f.message.slice(0, 137)}...` : f.message;
+    return `  ${pc.cyan(location(f).padEnd(width))}  ${pc.bold(f.api)}  ${pc.dim(msg)}`;
+  });
+  const more = manual.length > MAX_MANUAL_LINES ? [pc.dim(`  ... and ${manual.length - MAX_MANUAL_LINES} more (see lifeboat-checklist.md or --json)`)] : [];
+  return ["", pc.bold(pc.yellow(`Needs a human (${manual.length}):`)), ...shown, ...more];
+}
+
+export function formatReport(analysis: Analysis, command: "scan" | "migrate"): string {
+  const { summary } = analysis;
+  const rel = path.relative(process.cwd(), analysis.root) || ".";
+  const features = [
+    summary.features.serve && "Deno.serve",
+    summary.features.kv && pc.yellow("Deno KV"),
+    summary.features.cron && "Deno.cron",
+    ...summary.features.deploy.map((d) => pc.yellow(d)),
+  ].filter(Boolean);
+  const lines = [
+    "",
+    `${pc.bold("deno-lifeboat")} ${command} ${pc.dim(rel)} ${pc.dim(`→ ${TARGET_NAMES[analysis.target]}`)}`,
+    "",
+    ...[
+      tallyLine("Deno APIs", summary.apis),
+      tallyLine("Imports", summary.imports),
+      tallyLine("deno.json", summary.config),
+      tallyLine("TS syntax", summary.syntax),
+    ].filter((l): l is string => l !== undefined),
+    features.length > 0 ? `  ${"Features".padEnd(14)}${features.join(", ")}` : undefined,
+    summary.typeOnly > 0 ? pc.dim(`  ${"Type-only".padEnd(14)}${summary.typeOnly} Deno.* type references (no runtime effect)`) : undefined,
+    "",
+    `  ${pc.bold("Auto-migratable:")} ${bar(summary.overall.percent)} ${pc.bold(`${summary.overall.percent}%`)} ${pc.dim(`(${summary.overall.auto}/${summary.overall.total})`)}`,
+    ...manualLines(analysis.findings),
+  ].filter((l): l is string => l !== undefined);
+  return `${lines.join("\n")}\n`;
+}
+
+export function formatNextStep(analysis: Analysis, command: "scan" | "migrate", wrote: boolean): string {
+  const dir = path.relative(process.cwd(), analysis.root) || ".";
+  const dirArg = dir === "." ? "" : ` ${dir}`;
+  if (command === "scan") {
+    return `\n${pc.dim("Next:")} npx deno-lifeboat migrate${dirArg} --to ${analysis.target}   ${pc.dim("(dry run: shows the diff, changes nothing)")}\n`;
+  }
+  if (!wrote) {
+    return `\n${pc.dim("Dry run — nothing was written.")} Apply with: npx deno-lifeboat migrate${dirArg} --to ${analysis.target} --write\n`;
+  }
+  return `\n${pc.green("Done.")} Review with ${pc.bold("git diff")}, then follow ${pc.bold("lifeboat-checklist.md")}. deno.json was left untouched.\n`;
+}
+
+function colorPatch(patch: string): string {
+  return patch
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("+++") || line.startsWith("---")) return pc.bold(line);
+      if (line.startsWith("+")) return pc.green(line);
+      if (line.startsWith("-")) return pc.red(line);
+      if (line.startsWith("@@")) return pc.cyan(line);
+      return line;
+    })
+    .join("\n");
+}
+
+export function formatDiff(changes: readonly PlannedFile[], color: boolean): string {
+  return changes
+    .map((change) => {
+      const patch = createTwoFilesPatch(
+        change.original === undefined ? "/dev/null" : `a/${change.path}`,
+        `b/${change.path}`,
+        change.original ?? "",
+        change.content,
+        undefined,
+        undefined,
+        { context: 3 },
+      ).replace(/^=+\n/, "");
+      return color ? colorPatch(patch) : patch;
+    })
+    .join("\n");
+}
+
+export function analysisJson(analysis: Analysis, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    root: analysis.root,
+    target: analysis.target,
+    summary: analysis.summary,
+    entry: analysis.entry ?? null,
+    findings: analysis.findings,
+    changes: analysis.changes.map((c) => ({ path: c.path, created: c.original === undefined })),
+    ...extra,
+  };
+}

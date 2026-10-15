@@ -1,0 +1,13 @@
+{
+  // A small Deno Deploy-style app used by the end-to-end test.
+  "name": "@fixtures/serve-app",
+  "version": "1.0.0",
+  "tasks": {
+    "start": "deno run --allow-net --allow-env --allow-read main.ts",
+    "dev": "deno run --watch -A main.ts",
+    "test": "deno test --allow-read --allow-env"
+  },
+  "imports": {
+    "@/": "./lib/"
+  }
+}
