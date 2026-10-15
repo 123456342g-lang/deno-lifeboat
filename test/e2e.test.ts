@@ -103,7 +103,7 @@ describe("end-to-end: migrate the serve-app fixture", () => {
     assert.match(tests.stdout, /fail 0/);
   });
 
-  test("Bun: migrated app serves HTTP and its tests pass", { skip: bun === undefined && "bun not installed" }, async () => {
+  test("Bun: migrated app serves HTTP and its tests pass", { skip: bun === undefined && !process.env.LIFEBOAT_REQUIRE_BUN && "bun not installed" }, async () => {
     const dir = fixtureRepo("serve-app");
     migrate(dir, "bun");
     const port = await freePort();
