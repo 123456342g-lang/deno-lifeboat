@@ -64,6 +64,11 @@ export function serve(
     : serveWithNode({ port, hostname, onError, onListen, signal: options.signal }, handler);
 }
 
+/** The removed std/http/server.ts `serve(handler, options)`; resolves when the server closes. */
+export function serveStd(handler: ServeHandler, options: ServeOptions = {}): Promise<void> {
+  return serve(options, handler).finished;
+}
+
 interface ResolvedOptions {
   port: number;
   hostname: string;

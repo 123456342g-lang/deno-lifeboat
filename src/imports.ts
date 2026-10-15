@@ -82,8 +82,14 @@ const STD_RENAMES: Readonly<Record<string, string>> = {
 };
 
 const STD_MANUAL: Readonly<Record<string, string>> = {
-  "http/server.ts": "std/http/server.ts `serve` was removed from std; use Deno.serve (lifeboat rewrites it) or node:http",
+  "http/server.ts":
+    "std/http/server.ts was removed from std; lifeboat maps `import { serve }` (plus the Handler/ConnInfo types) to its serve shim, other exports (serveTls, Server) need porting to Deno.serve",
 };
+
+/** `https://deno.land/std@x/http/server.ts` (the pre-Deno.serve std HTTP server). */
+export function isStdHttpServer(specifier: string): boolean {
+  return /^https:\/\/deno\.land\/std(?:@[^/]+)?\/http\/server\.ts$/.test(specifier);
+}
 
 function mapDenoStd(rest: string): SpecifierMapping {
   const match = /^std(?:@[^/]+)?\/(.+)$/.exec(rest);
