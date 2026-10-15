@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Scan a Deno project and migrate it to Node, Bun, or Cloudflare Workers — AST-based, dry-run by default.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/123456342g-lang/deno-lifeboat.git"
+  },
   "type": "module",
   "bin": {
     "deno-lifeboat": "dist/src/cli.js",
@@ -21,7 +25,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node scripts/run-tests.mjs",
-    "lifeboat": "node dist/src/cli.js"
+    "lifeboat": "node dist/src/cli.js",
+    "prepare": "npm run build"
   },
   "keywords": [
     "deno",
